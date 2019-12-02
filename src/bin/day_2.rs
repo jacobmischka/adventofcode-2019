@@ -11,25 +11,27 @@ fn main() {
     let _ = io::stdin().read_line(&mut line).unwrap();
     let input = line.trim().to_string();
 
-    {
-        let mut program = IntcodeProgram::new(&input).unwrap();
-        program.write(1, 12);
-        program.write(2, 2);
-        program.run().unwrap();
+    let mut computer = IntcodeComputer::new();
 
-        println!("Part 1: {}", program.read(0));
+    {
+        computer.init(&input).unwrap();
+        computer.write(1, 12);
+        computer.write(2, 2);
+        computer.run().unwrap();
+
+        println!("Part 1: {}", computer.read(0));
     }
 
     let mut noun = 0;
     let mut verb = 0;
 
     loop {
-        let mut program = IntcodeProgram::new(&input).unwrap();
-        program.write(1, noun);
-        program.write(2, verb);
-        program.run().unwrap();
+        computer.init(&input).unwrap();
+        computer.write(1, noun);
+        computer.write(2, verb);
+        computer.run().unwrap();
 
-        if program.read(0) == EXPECTED_OUTPUT {
+        if computer.read(0) == EXPECTED_OUTPUT {
             break;
         } else {
             if verb == MAX_INPUT {

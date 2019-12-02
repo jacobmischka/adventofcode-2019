@@ -1,23 +1,28 @@
 #[derive(Debug)]
-pub struct IntcodeProgram {
-    raw: String,
+pub struct IntcodeComputer {
     mem: Vec<u32>,
     pos: usize,
 }
 
-impl IntcodeProgram {
-    pub fn new(raw: &str) -> Result<Self, Error> {
-        Ok(Self {
-            raw: raw.to_string(),
-            mem: raw
-                .split(',')
-                .map(|s| {
-                    s.parse::<u32>()
-                        .map_err(|_| Error::ProgramParseError(s.to_string()))
-                })
-                .collect::<Result<Vec<u32>, Error>>()?,
+impl IntcodeComputer {
+    pub fn new() -> Self {
+        Self {
+            mem: Vec::new(),
             pos: 0 as usize,
-        })
+        }
+    }
+
+    pub fn init(&mut self, raw: &str) -> Result<(), Error> {
+        self.mem = raw
+            .split(',')
+            .map(|s| {
+                s.parse::<u32>()
+                    .map_err(|_| Error::ProgramParseError(s.to_string()))
+            })
+            .collect::<Result<Vec<u32>, Error>>()?;
+        self.pos = 0;
+
+        Ok(())
     }
 
     pub fn run(&mut self) -> Result<(), Error> {
@@ -53,7 +58,8 @@ impl IntcodeProgram {
 
     #[allow(dead_code)]
     fn execute_and_dump(raw: &str) -> Result<String, Error> {
-        let mut p = Self::new(raw)?;
+        let mut p = Self::new();
+        p.init(raw)?;
         p.run()?;
         Ok(p.dump())
     }
@@ -104,19 +110,19 @@ enum Opcode {
 #[test]
 fn it_works() {
     assert_eq!(
-        IntcodeProgram::execute_and_dump("1,0,0,0,99").unwrap(),
+        IntcodeComputer::execute_and_dump("1,0,0,0,99").unwrap(),
         "2,0,0,0,99"
     );
     assert_eq!(
-        IntcodeProgram::execute_and_dump("2,3,0,3,99").unwrap(),
+        IntcodeComputer::execute_and_dump("2,3,0,3,99").unwrap(),
         "2,3,0,6,99"
     );
     assert_eq!(
-        IntcodeProgram::execute_and_dump("2,4,4,5,99,0").unwrap(),
+        IntcodeComputer::execute_and_dump("2,4,4,5,99,0").unwrap(),
         "2,4,4,5,99,9801"
     );
     assert_eq!(
-        IntcodeProgram::execute_and_dump("1,1,1,4,99,5,6,0,99").unwrap(),
+        IntcodeComputer::execute_and_dump("1,1,1,4,99,5,6,0,99").unwrap(),
         "30,1,1,4,2,5,6,0,99"
     );
 }
