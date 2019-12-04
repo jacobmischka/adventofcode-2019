@@ -1,4 +1,3 @@
-use std::cmp;
 use std::io;
 use std::ops::Add;
 
@@ -28,7 +27,11 @@ fn get_closest_intersection_distance(wire1: &Wire, wire2: &Wire) -> Option<u32> 
     let mut min_distance = None;
     let origin = Point::new(0, 0);
 
-    for intersection in intersections.iter().skip(1) {
+    for intersection in intersections.iter() {
+        if intersection == &origin {
+            continue;
+        }
+
         let distance = origin.manhattan_distance(&intersection);
         match min_distance {
             Some(old_min) => {
@@ -47,16 +50,21 @@ fn get_fewest_intersection_steps(wire1: &Wire, wire2: &Wire) -> Option<u32> {
     let intersections = wire1.intersections_and_steps(&wire2);
 
     let mut min_steps = None;
+    let origin = Point::new(0, 0);
 
-    for (intersection, (paths1, paths2)) in intersections.iter().skip(1) {
+    for (intersection, (paths1, paths2)) in intersections.iter() {
+        if intersection == &origin {
+            continue;
+        }
+
         let steps = get_paths_length(paths1)
-            + paths1
+            - paths1
                 .last()
                 .unwrap()
                 .end()
                 .manhattan_distance(&intersection)
             + get_paths_length(paths2)
-            + paths2
+            - paths2
                 .last()
                 .unwrap()
                 .end()
@@ -117,7 +125,7 @@ impl Wire {
         for (i1, p1) in self.paths.iter().enumerate() {
             for (i2, p2) in other.paths.iter().enumerate() {
                 if let Some(intersection) = p1.intersection(&p2) {
-                    intersections.push((intersection, (&self.paths[0..i1], &other.paths[0..i2])));
+                    intersections.push((intersection, (&self.paths[0..=i1], &other.paths[0..=i2])));
                 }
             }
         }
@@ -284,6 +292,13 @@ fn intersection_works() {
 
 #[test]
 fn examples_work() {
+    let ex0 = (
+        Wire::new("R8,U5,L5,D3").unwrap(),
+        Wire::new("U7,R6,D4,L4").unwrap(),
+    );
+    assert_eq!(get_closest_intersection_distance(&ex0.0, &ex0.1), Some(6));
+    assert_eq!(get_fewest_intersection_steps(&ex0.0, &ex0.1), Some(30));
+
     let ex1 = (
         Wire::new("R75,D30,R83,U83,L12,D49,R71,U7,L72").unwrap(),
         Wire::new("U62,R66,U55,R34,D71,R55,D58,R83").unwrap(),
