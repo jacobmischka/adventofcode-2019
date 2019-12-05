@@ -64,21 +64,38 @@ impl IntcodeComputer {
         Ok(p.dump())
     }
 
-    fn get_inst(&mut self) -> Result<Opcode, Error> {
-        match self.read_next() {
+    fn get_inst(&mut self) -> Result<Instruction, Error> {
+		let val = self.read_next();
+		let opcode = val % 100;
+
+        let operation = match val {
             1 => {
-                let lhs_pos = self.read_next();
-                let rhs_pos = self.read_next();
-                Ok(Opcode::Add(self.read(lhs_pos), self.read(rhs_pos)))
+				Ok(Opcode::Add)
+                // let lhs_pos = self.read_next();
+                // let rhs_pos = self.read_next();
+                // Ok(Opcode::Add(self.read(lhs_pos), self.read(rhs_pos)))
             }
             2 => {
-                let lhs_pos = self.read_next();
-                let rhs_pos = self.read_next();
-                Ok(Opcode::Multiply(self.read(lhs_pos), self.read(rhs_pos)))
+				Ok(Opcode::Multiply)
+                // let lhs_pos = self.read_next();
+                // let rhs_pos = self.read_next();
+                // Ok(Opcode::Multiply(self.read(lhs_pos), self.read(rhs_pos)))
+            }
+            3 => {
+				Ok(Opcode::Input)
+                let address = self.read_next();
+                Ok(Opcode::Input(address))
+            }
+            4 => {
+                let address = self.read_next();
+                Ok(Opcode::Output(self.read(address)))
             }
             99 => Ok(Opcode::Exit),
             x => Err(Error::OpcodeParseError(x)),
-        }
+        }?;
+
+		match operation {
+		}
     }
 
     pub fn read(&self, pos: u32) -> u32 {
@@ -100,10 +117,27 @@ impl IntcodeComputer {
     }
 }
 
+type Int = u32;
+
 #[derive(Debug)]
-enum Opcode {
-    Add(u32, u32),
-    Multiply(u32, u32),
+struct Instruction {
+	operation: Operation,
+	modes: Vec<ParameterMode>,
+	params: Vec<Int>
+}
+
+#[derive(Debug)]
+enum ParameterMode {
+	Position,
+	Immediate
+}
+
+#[derive(Debug)]
+enum Operation {
+    Add,
+    Multiply,
+    Input,
+    Output,
     Exit,
 }
 
