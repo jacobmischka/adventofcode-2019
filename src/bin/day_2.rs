@@ -1,10 +1,12 @@
+use async_std::task;
+
 use adventofcode_2019::intcode_computer::*;
 
 use std::io;
 
-const EXPECTED_OUTPUT: u32 = 19690720;
+const EXPECTED_OUTPUT: Int = 19690720;
 
-const MAX_INPUT: u32 = 99;
+const MAX_INPUT: Int = 99;
 
 fn main() {
     let mut line = String::new();
@@ -17,7 +19,7 @@ fn main() {
         computer.init(&input).unwrap();
         computer.write(1, 12);
         computer.write(2, 2);
-        computer.run().unwrap();
+        task::block_on(computer.run()).unwrap();
 
         println!("Part 1: {}", computer.read(0));
     }
@@ -29,7 +31,7 @@ fn main() {
         computer.init(&input).unwrap();
         computer.write(1, noun);
         computer.write(2, verb);
-        computer.run().unwrap();
+        task::block_on(computer.run()).unwrap();
 
         if computer.read(0) == EXPECTED_OUTPUT {
             break;
