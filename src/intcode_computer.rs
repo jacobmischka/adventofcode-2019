@@ -4,15 +4,25 @@ pub type Int = i32;
 
 #[derive(Debug)]
 pub struct IntcodeComputer {
+    state: OperationState,
     mem: Vec<Int>,
     pos: usize,
     input_buf: VecDeque<Int>,
     pub output_buf: VecDeque<Int>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum OperationState {
+    Preinit,
+    Ready,
+    Running,
+    Exited,
+}
+
 impl IntcodeComputer {
     pub fn new() -> Self {
         Self {
+            state: OperationState::Preinit,
             mem: Vec::new(),
             pos: 0 as usize,
             input_buf: VecDeque::new(),
@@ -20,7 +30,12 @@ impl IntcodeComputer {
         }
     }
 
+    pub fn state(&self) -> &OperationState {
+        &self.state
+    }
+
     pub fn init(&mut self, raw: &str) -> Result<(), Error> {
+        self.state = OperationState::Ready;
         self.mem = raw
             .split(',')
             .map(|s| {
@@ -48,11 +63,11 @@ impl IntcodeComputer {
     }
 
     pub async fn get_output(&mut self) -> Int {
-		loop {
-			if let Some(output) = self.output_buf.pop_front() {
-				return output;
-			}
-		}
+        loop {
+            if let Some(output) = self.output_buf.pop_front() {
+                return output;
+            }
+        }
     }
 
     pub async fn run(&mut self) -> Result<(), Error> {
@@ -60,9 +75,9 @@ impl IntcodeComputer {
 
         loop {
             let inst = self.get_inst().unwrap();
-			if cfg!(feature = "debug") {
-				dbg!(&inst);
-			}
+            if cfg!(feature = "debug") {
+                dbg!(&inst);
+            }
             match inst {
                 Add(lhs, rhs, dest) => {
                     self.write(self.get(&dest), self.get(&lhs) + self.get(&rhs));
@@ -88,14 +103,23 @@ impl IntcodeComputer {
                     }
                 }
                 LessThan(lhs, rhs, dest) => {
-                    let val = if self.get(&lhs) < self.get(&rhs) { 1 } else { 0 };
+                    let val = if self.get(&lhs) < self.get(&rhs) {
+                        1
+                    } else {
+                        0
+                    };
                     self.write(self.get(&dest), val);
                 }
                 Equals(lhs, rhs, dest) => {
-                    let val = if self.get(&lhs) == self.get(&rhs) { 1 } else { 0 };
+                    let val = if self.get(&lhs) == self.get(&rhs) {
+                        1
+                    } else {
+                        0
+                    };
                     self.write(self.get(&dest), val);
                 }
                 Exit => {
+                    self.state = OperationState::Exited;
                     break;
                 }
             }
@@ -138,10 +162,7 @@ impl IntcodeComputer {
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
                 Parameter(self.read_next(), ParameterMode::Immediate),
             )),
-            3 => Ok(Input(Parameter(
-                self.read_next(),
-                ParameterMode::Immediate,
-            ))),
+            3 => Ok(Input(Parameter(self.read_next(), ParameterMode::Immediate))),
             4 => Ok(Output(Parameter(
                 self.read_next(),
                 ParameterMode::new(val, 0)?,

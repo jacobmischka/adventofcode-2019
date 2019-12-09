@@ -1,4 +1,5 @@
 use async_std::task;
+use futures::future::join_all;
 use permute::permute;
 
 use adventofcode_2019::intcode_computer::*;
@@ -45,18 +46,38 @@ fn reset_amps(amps: &mut [IntcodeComputer], program: &str) {
 
 async fn run_amps(amps: &mut [IntcodeComputer], phase_settings: &[Int], initial_input: Int) -> Int {
     let len = amps.len();
-    for i in 0..len {
-        amps[i].add_input(phase_settings[i]);
-        let input = if i == 0 {
-            initial_input
-        } else {
-            amps[i - 1].get_output().await
-        };
-        amps[i].add_input(input);
-        amps[i].run().await.unwrap();
+    amps[0].add_input(initial_input);
+
+    for (amp, phase_setting) in amps.iter().zip(phase_settings) {
+        amp.add_input(*phase_setting);
     }
 
+    let mut tasks = Vec::new();
+
+    for i in 0..len {
+        tasks.push(poll(
+            &mut amps[i],
+            &mut amps[if i == 0 { len - 1 } else { i - 1 }],
+        ));
+    }
+
+    join_all(tasks).await;
+
     amps[len - 1].get_output().await
+}
+
+async fn poll(amp: &mut IntcodeComputer, input_amp: &mut IntcodeComputer) {
+    let f = amp.run();
+    loop {
+        let state = amp.state();
+        if state == &OperationState::Exited {
+            break;
+        }
+
+        let input = input_amp.get_output().await;
+        amp.add_input(input);
+    }
+    f.await;
 }
 
 #[test]
