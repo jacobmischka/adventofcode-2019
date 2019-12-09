@@ -47,8 +47,12 @@ impl IntcodeComputer {
         }
     }
 
-    pub async fn get_output(&mut self) -> Option<Int> {
-        self.output_buf.pop_front()
+    pub async fn get_output(&mut self) -> Int {
+		loop {
+			if let Some(output) = self.output_buf.pop_front() {
+				return output;
+			}
+		}
     }
 
     pub async fn run(&mut self) -> Result<(), Error> {
@@ -56,6 +60,9 @@ impl IntcodeComputer {
 
         loop {
             let inst = self.get_inst().unwrap();
+			if cfg!(feature = "debug") {
+				dbg!(&inst);
+			}
             match inst {
                 Add(lhs, rhs, dest) => {
                     self.write(self.get(&dest), self.get(&lhs) + self.get(&rhs));
