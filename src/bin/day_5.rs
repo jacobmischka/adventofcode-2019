@@ -9,15 +9,31 @@ fn main() {
     let _ = io::stdin().read_line(&mut line).unwrap();
     let input = line.trim().to_string();
 
-    let mut computer = IntcodeComputer::new();
+    let (inputs, outputs) = IntcodeComputer::create_io();
+    let mut computer = IntcodeComputer::new(&inputs.1, &outputs.0);
 
     computer.init(&input).unwrap();
-    computer.add_input(1);
-    task::block_on(computer.run()).unwrap();
-    println!("Part 1: {}", computer.output_buf.back().unwrap());
+    let output = task::block_on(async {
+        (inputs.0).send(1).await;
+        computer.run().await.unwrap();
+        let mut ret = -1;
+        while let Some(output) = (outputs.1).recv().await {
+            ret = output
+        }
+        ret
+    });
+    println!("Part 1: {}", output);
 
     computer.init(&input).unwrap();
-    computer.add_input(5);
-    task::block_on(computer.run()).unwrap();
-    println!("Part 2: {}", computer.output_buf.back().unwrap());
+    let output = task::block_on(async {
+        (inputs.0).send(5).await;
+        computer.run().await.unwrap();
+        let mut ret = -1;
+        while let Some(output) = (outputs.1).recv().await {
+            ret = output
+        }
+        ret
+    });
+
+    println!("Part 2: {}", output);
 }

@@ -13,7 +13,8 @@ fn main() {
     let _ = io::stdin().read_line(&mut line).unwrap();
     let input = line.trim().to_string();
 
-    let mut computer = IntcodeComputer::new();
+    let (inputs, outputs) = IntcodeComputer::create_io();
+    let mut computer = IntcodeComputer::new(&inputs.1, &outputs.0);
 
     {
         computer.init(&input).unwrap();
