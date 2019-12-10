@@ -1,18 +1,16 @@
 use async_std::sync::{channel, Receiver, Sender};
 
-const BUFFER_SIZE: usize = 50;
+pub const BUFFER_SIZE: usize = 50;
 
 pub type Int = i32;
 
 #[derive(Debug)]
-pub struct IntcodeComputer {
+pub struct IntcodeComputer<'a> {
     state: OperationState,
     mem: Vec<Int>,
     pos: usize,
-    input_sender: Option<Sender<Int>>,
-    input_receiver: Option<Receiver<Int>>,
-    output_sender: Option<Sender<Int>>,
-    output_receiver: Option<Receiver<Int>>,
+    input: &'a Receiver<Int>,
+    output: &'a Sender<Int>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -23,26 +21,30 @@ pub enum OperationState {
     Exited,
 }
 
-impl IntcodeComputer {
-    pub fn new() -> Self {
+pub type IOChannels = (Sender<Int>, Receiver<Int>);
+
+impl<'a> IntcodeComputer<'a> {
+    pub fn new(input: &'a Receiver<Int>, output: &'a Sender<Int>) -> Self {
         Self {
             state: OperationState::Preinit,
             mem: Vec::new(),
             pos: 0 as usize,
-            input_sender: None,
-            input_receiver: None,
-            output_sender: None,
-            output_receiver: None,
+            input,
+            output,
         }
+    }
+
+    pub fn create_io() -> (IOChannels, IOChannels) {
+        (channel(BUFFER_SIZE), channel(BUFFER_SIZE))
     }
 
     pub fn state(&self) -> &OperationState {
         &self.state
     }
 
-    pub fn init(&mut self, raw: &str) -> Result<(), Error> {
+    pub fn init(&mut self, program: &str) -> Result<(), Error> {
         self.state = OperationState::Ready;
-        self.mem = raw
+        self.mem = program
             .split(',')
             .map(|s| {
                 s.parse::<Int>()
@@ -50,36 +52,11 @@ impl IntcodeComputer {
             })
             .collect::<Result<Vec<Int>, Error>>()?;
         self.pos = 0;
-        let (input_sender, input_receiver) = channel(BUFFER_SIZE);
-        let (output_sender, output_receiver) = channel(BUFFER_SIZE);
-        self.input_sender = Some(input_sender);
-        self.input_receiver = Some(input_receiver);
-        self.output_sender = Some(output_sender);
-        self.output_receiver = Some(output_receiver);
-
         Ok(())
     }
 
-    pub async fn add_input(&self, val: Int) {
-        if let Some(sender) = &self.input_sender {
-            sender.send(val).await;
-        }
-    }
-
     async fn get_input(&self) -> Option<Int> {
-        if let Some(receiver) = &self.input_receiver {
-            receiver.recv().await
-        } else {
-            None
-        }
-    }
-
-    pub async fn get_output(&self) -> Option<Int> {
-        if let Some(receiver) = &self.output_receiver {
-            receiver.recv().await
-        } else {
-            None
-        }
+        self.input.recv().await
     }
 
     pub async fn run(&mut self) -> Result<(), Error> {
@@ -102,11 +79,7 @@ impl IntcodeComputer {
                     self.write(self.get(&dest), input);
                 }
                 Output(src) => {
-                    self.output_sender
-                        .as_ref()
-                        .unwrap()
-                        .send(self.get(&src))
-                        .await;
+                    self.output.send(self.get(&src)).await;
                 }
                 JumpIfTrue(x, dest) => {
                     if self.get(&x) != 0 {
@@ -146,8 +119,6 @@ impl IntcodeComputer {
 
     fn exit(&mut self) {
         self.state = OperationState::Exited;
-        self.input_sender = None;
-        self.output_sender = None;
     }
 
     #[allow(dead_code)]
@@ -157,14 +128,6 @@ impl IntcodeComputer {
             .map(|i| i.to_string())
             .collect::<Vec<String>>()
             .join(",")
-    }
-
-    #[allow(dead_code)]
-    async fn execute_and_dump(raw: &str) -> Result<String, Error> {
-        let mut p = Self::new();
-        p.init(raw)?;
-        p.run().await?;
-        Ok(p.dump())
     }
 
     fn get_inst(&mut self) -> Result<Instruction, Error> {
@@ -286,27 +249,37 @@ fn day_2_examples_work() {
     use async_std::task;
 
     assert_eq!(
-        task::block_on(IntcodeComputer::execute_and_dump("1,0,0,0,99")).unwrap(),
+        task::block_on(execute_and_dump("1,0,0,0,99")).unwrap(),
         "2,0,0,0,99"
     );
     assert_eq!(
-        task::block_on(IntcodeComputer::execute_and_dump("2,3,0,3,99")).unwrap(),
+        task::block_on(execute_and_dump("2,3,0,3,99")).unwrap(),
         "2,3,0,6,99"
     );
     assert_eq!(
-        task::block_on(IntcodeComputer::execute_and_dump("2,4,4,5,99,0")).unwrap(),
+        task::block_on(execute_and_dump("2,4,4,5,99,0")).unwrap(),
         "2,4,4,5,99,9801"
     );
     assert_eq!(
-        task::block_on(IntcodeComputer::execute_and_dump("1,1,1,4,99,5,6,0,99")).unwrap(),
+        task::block_on(execute_and_dump("1,1,1,4,99,5,6,0,99")).unwrap(),
         "30,1,1,4,2,5,6,0,99"
     );
+}
+
+#[allow(dead_code)]
+async fn execute_and_dump(raw: &str) -> Result<String, Error> {
+    let (inputs, outputs) = IntcodeComputer::create_io();
+    let mut p = IntcodeComputer::new(&inputs.1, &outputs.0);
+    p.init(raw)?;
+    p.run().await?;
+    Ok(p.dump())
 }
 
 #[test]
 fn day_5_examples_work() {
     use async_std::task;
-    let mut computer = IntcodeComputer::new();
+    let (inputs, outputs) = IntcodeComputer::create_io();
+    let mut computer = IntcodeComputer::new(&inputs.1, &outputs.0);
     computer.init("1002,4,3,4,33").unwrap();
     task::block_on(computer.run()).unwrap();
 
