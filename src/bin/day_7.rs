@@ -17,21 +17,20 @@ fn main() {
 }
 
 fn get_max_output(program: &str, initial_input: Int) -> Int {
-    let mut amps: [IntcodeComputer; NUM_AMPS] = [
-        IntcodeComputer::new(),
-        IntcodeComputer::new(),
-        IntcodeComputer::new(),
-        IntcodeComputer::new(),
-        IntcodeComputer::new(),
-    ];
-
     let phase_options: Vec<Int> = (0..NUM_AMPS).map(|x| x as _).collect();
 
     let mut max = 0;
 
     for permutation in permute(phase_options) {
+        let mut amps: [IntcodeComputer; NUM_AMPS] = [
+            IntcodeComputer::new(),
+            IntcodeComputer::new(),
+            IntcodeComputer::new(),
+            IntcodeComputer::new(),
+            IntcodeComputer::new(),
+        ];
         reset_amps(&mut amps, program);
-        let output = task::block_on(run_amps(&mut amps, &permutation, initial_input));
+        let output = task::block_on(run_amps(amps, &permutation, initial_input));
         max = max.max(output);
     }
 
@@ -44,7 +43,11 @@ fn reset_amps(amps: &mut [IntcodeComputer], program: &str) {
     }
 }
 
-async fn run_amps(amps: &mut [IntcodeComputer], phase_settings: &[Int], initial_input: Int) -> Int {
+async fn run_amps(
+    amps: [IntcodeComputer; NUM_AMPS],
+    phase_settings: &[Int],
+    initial_input: Int,
+) -> Int {
     let len = amps.len();
     amps[0].add_input(initial_input);
 
@@ -55,29 +58,23 @@ async fn run_amps(amps: &mut [IntcodeComputer], phase_settings: &[Int], initial_
     let mut tasks = Vec::new();
 
     for i in 0..len {
-        tasks.push(poll(
-            &mut amps[i],
-            &mut amps[if i == 0 { len - 1 } else { i - 1 }],
-        ));
+        poll(&amps[i], &amps[if i == 0 { len - 1 } else { i - 1 }]);
+    }
+    for i in 0..len {
+        tasks.push(amps[i].run());
     }
 
     join_all(tasks).await;
 
-    amps[len - 1].get_output().await
+    amps[len - 1].get_output().await.unwrap()
 }
 
-async fn poll(amp: &mut IntcodeComputer, input_amp: &mut IntcodeComputer) {
-    let f = amp.run();
-    loop {
-        let state = amp.state();
-        if state == &OperationState::Exited {
-            break;
-        }
-
-        let input = input_amp.get_output().await;
-        amp.add_input(input);
+async fn poll(amp: &IntcodeComputer, input_amp: &IntcodeComputer) -> Result<(), Error> {
+    while let Some(output) = input_amp.get_output().await {
+        amp.add_input(output);
     }
-    f.await;
+
+    Ok(())
 }
 
 #[test]

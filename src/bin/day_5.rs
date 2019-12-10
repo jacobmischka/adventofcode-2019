@@ -12,12 +12,27 @@ fn main() {
     let mut computer = IntcodeComputer::new();
 
     computer.init(&input).unwrap();
-    computer.add_input(1);
-    task::block_on(computer.run()).unwrap();
-    println!("Part 1: {}", computer.output_buf.back().unwrap());
+    let output = task::block_on(async {
+        computer.add_input(1).await;
+        computer.run().await.unwrap();
+        let mut ret = -1;
+        while let Some(output) = computer.get_output().await {
+            ret = output
+        }
+        ret
+    });
+    println!("Part 1: {}", output);
 
     computer.init(&input).unwrap();
-    computer.add_input(5);
-    task::block_on(computer.run()).unwrap();
-    println!("Part 2: {}", computer.output_buf.back().unwrap());
+    let output = task::block_on(async {
+        computer.add_input(5).await;
+        computer.run().await.unwrap();
+        let mut ret = -1;
+        while let Some(output) = computer.get_output().await {
+            ret = output
+        }
+        ret
+    });
+
+    println!("Part 2: {}", output);
 }

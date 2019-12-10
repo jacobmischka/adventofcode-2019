@@ -1,4 +1,6 @@
-use std::collections::VecDeque;
+use async_std::sync::{channel, Receiver, Sender};
+
+const BUFFER_SIZE: usize = 50;
 
 pub type Int = i32;
 
@@ -7,8 +9,10 @@ pub struct IntcodeComputer {
     state: OperationState,
     mem: Vec<Int>,
     pos: usize,
-    input_buf: VecDeque<Int>,
-    pub output_buf: VecDeque<Int>,
+    input_sender: Option<Sender<Int>>,
+    input_receiver: Option<Receiver<Int>>,
+    output_sender: Option<Sender<Int>>,
+    output_receiver: Option<Receiver<Int>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -25,8 +29,10 @@ impl IntcodeComputer {
             state: OperationState::Preinit,
             mem: Vec::new(),
             pos: 0 as usize,
-            input_buf: VecDeque::new(),
-            output_buf: VecDeque::new(),
+            input_sender: None,
+            input_receiver: None,
+            output_sender: None,
+            output_receiver: None,
         }
     }
 
@@ -44,29 +50,35 @@ impl IntcodeComputer {
             })
             .collect::<Result<Vec<Int>, Error>>()?;
         self.pos = 0;
-        self.input_buf.clear();
-        self.output_buf.clear();
+        let (input_sender, input_receiver) = channel(BUFFER_SIZE);
+        let (output_sender, output_receiver) = channel(BUFFER_SIZE);
+        self.input_sender = Some(input_sender);
+        self.input_receiver = Some(input_receiver);
+        self.output_sender = Some(output_sender);
+        self.output_receiver = Some(output_receiver);
 
         Ok(())
     }
 
-    pub fn add_input(&mut self, val: Int) {
-        self.input_buf.push_back(val);
-    }
-
-    async fn get_input(&mut self) -> Int {
-        loop {
-            if let Some(input) = self.input_buf.pop_front() {
-                return input;
-            }
+    pub async fn add_input(&self, val: Int) {
+        if let Some(sender) = &self.input_sender {
+            sender.send(val).await;
         }
     }
 
-    pub async fn get_output(&mut self) -> Int {
-        loop {
-            if let Some(output) = self.output_buf.pop_front() {
-                return output;
-            }
+    async fn get_input(&self) -> Option<Int> {
+        if let Some(receiver) = &self.input_receiver {
+            receiver.recv().await
+        } else {
+            None
+        }
+    }
+
+    pub async fn get_output(&self) -> Option<Int> {
+        if let Some(receiver) = &self.output_receiver {
+            receiver.recv().await
+        } else {
+            None
         }
     }
 
@@ -86,11 +98,15 @@ impl IntcodeComputer {
                     self.write(self.get(&dest), self.get(&lhs) * self.get(&rhs));
                 }
                 Input(dest) => {
-                    let input = self.get_input().await;
+                    let input = self.get_input().await.unwrap();
                     self.write(self.get(&dest), input);
                 }
                 Output(src) => {
-                    self.output_buf.push_back(self.get(&src));
+                    self.output_sender
+                        .as_ref()
+                        .unwrap()
+                        .send(self.get(&src))
+                        .await;
                 }
                 JumpIfTrue(x, dest) => {
                     if self.get(&x) != 0 {
@@ -119,13 +135,19 @@ impl IntcodeComputer {
                     self.write(self.get(&dest), val);
                 }
                 Exit => {
-                    self.state = OperationState::Exited;
+                    self.exit();
                     break;
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn exit(&mut self) {
+        self.state = OperationState::Exited;
+        self.input_sender = None;
+        self.output_sender = None;
     }
 
     #[allow(dead_code)]
