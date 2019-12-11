@@ -54,6 +54,7 @@ impl<'a> IntcodeComputer<'a> {
             })
             .collect::<Result<Vec<Int>, Error>>()?;
         self.pos = 0;
+        self.relative_base = 0;
         Ok(())
     }
 
@@ -67,37 +68,37 @@ impl<'a> IntcodeComputer<'a> {
         loop {
             let inst = self.get_inst().unwrap();
             if cfg!(feature = "debug") {
-                dbg!(&inst);
+                dbg!(&self.relative_base, &inst);
             }
             match inst {
                 Add(lhs, rhs, dest) => {
-                    let dest = self.get(&dest);
                     let lhs = self.get(&lhs);
                     let rhs = self.get(&rhs);
-                    self.write(dest as usize, lhs + rhs);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, lhs + rhs);
                 }
                 Multiply(lhs, rhs, dest) => {
-                    let dest = self.get(&dest);
                     let lhs = self.get(&lhs);
                     let rhs = self.get(&rhs);
-                    self.write(dest as usize, lhs * rhs);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, lhs * rhs);
                 }
                 Input(dest) => {
                     let input = self.get_input().await.unwrap();
-                    let dest = self.get(&dest);
-                    self.write(dest as usize, input);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, input);
                 }
                 Output(src) => {
                     self.output.send(self.get(&src)).await;
                 }
                 JumpIfTrue(x, dest) => {
                     if self.get(&x) != 0 {
-                        self.pos = self.get(&dest) as _;
+                        self.pos = self.get(&dest) as usize;
                     }
                 }
                 JumpIfFalse(x, dest) => {
                     if self.get(&x) == 0 {
-                        self.pos = self.get(&dest) as _;
+                        self.pos = self.get(&dest) as usize;
                     }
                 }
                 LessThan(lhs, rhs, dest) => {
@@ -106,8 +107,8 @@ impl<'a> IntcodeComputer<'a> {
                     } else {
                         0
                     };
-                    let dest = self.get(&dest);
-                    self.write(dest as usize, val);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, val);
                 }
                 Equals(lhs, rhs, dest) => {
                     let val = if self.get(&lhs) == self.get(&rhs) {
@@ -115,8 +116,8 @@ impl<'a> IntcodeComputer<'a> {
                     } else {
                         0
                     };
-                    let dest = self.get(&dest);
-                    self.write(dest as usize, val);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, val);
                 }
                 RelativeBase(adj) => {
                     self.relative_base += self.get(&adj) as isize;
@@ -154,14 +155,17 @@ impl<'a> IntcodeComputer<'a> {
             1 => Ok(Add(
                 Parameter(self.read_next(), ParameterMode::new(val, 0)?),
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
-                Parameter(self.read_next(), ParameterMode::Immediate),
+                Parameter(self.read_next(), ParameterMode::new(val, 2)?),
             )),
             2 => Ok(Multiply(
                 Parameter(self.read_next(), ParameterMode::new(val, 0)?),
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
-                Parameter(self.read_next(), ParameterMode::Immediate),
+                Parameter(self.read_next(), ParameterMode::new(val, 2)?),
             )),
-            3 => Ok(Input(Parameter(self.read_next(), ParameterMode::Immediate))),
+            3 => Ok(Input(Parameter(
+                self.read_next(),
+                ParameterMode::new(val, 0)?,
+            ))),
             4 => Ok(Output(Parameter(
                 self.read_next(),
                 ParameterMode::new(val, 0)?,
@@ -177,12 +181,12 @@ impl<'a> IntcodeComputer<'a> {
             7 => Ok(LessThan(
                 Parameter(self.read_next(), ParameterMode::new(val, 0)?),
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
-                Parameter(self.read_next(), ParameterMode::Immediate),
+                Parameter(self.read_next(), ParameterMode::new(val, 2)?),
             )),
             8 => Ok(Equals(
                 Parameter(self.read_next(), ParameterMode::new(val, 0)?),
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
-                Parameter(self.read_next(), ParameterMode::Immediate),
+                Parameter(self.read_next(), ParameterMode::new(val, 2)?),
             )),
             9 => Ok(RelativeBase(Parameter(
                 self.read_next(),
@@ -197,15 +201,26 @@ impl<'a> IntcodeComputer<'a> {
         use ParameterMode::*;
 
         match param.1 {
-            Position => self.read(param.0 as usize),
             Immediate => param.0,
-            Relative => self.read((self.relative_base + param.0 as isize) as usize),
+            _ => {
+                let addr = self.get_addr(param);
+                self.read(addr)
+            }
+        }
+    }
+
+    fn get_addr(&mut self, param: &Parameter) -> usize {
+        use ParameterMode::*;
+
+        match param.1 {
+            Relative => (self.relative_base + param.0 as isize) as usize,
+            _ => param.0 as usize,
         }
     }
 
     pub fn read(&mut self, pos: usize) -> Int {
         if pos >= self.mem.len() {
-            self.mem.resize(pos.max(self.mem.len() * 2), 0);
+            self.mem.resize((pos * 2).max(self.mem.len() * 2), 0);
         }
 
         self.mem[pos]
@@ -219,7 +234,7 @@ impl<'a> IntcodeComputer<'a> {
 
     pub fn write(&mut self, pos: usize, val: Int) -> () {
         if pos >= self.mem.len() {
-            self.mem.resize(pos.max(self.mem.len() * 2), 0);
+            self.mem.resize((pos * 2).max(self.mem.len() * 2), 0);
         }
 
         self.mem[pos as usize] = val;
@@ -297,12 +312,32 @@ fn day_2_examples_work() {
 }
 
 #[allow(dead_code)]
-async fn execute_and_dump(raw: &str) -> Result<String, Error> {
+async fn execute_and_dump(program: &str) -> Result<String, Error> {
     let (inputs, outputs) = IntcodeComputer::create_io();
     let mut p = IntcodeComputer::new(&inputs.1, &outputs.0);
-    p.init(raw)?;
+    p.init(program)?;
     p.run().await?;
     Ok(p.dump())
+}
+
+#[allow(dead_code)]
+async fn get_output(program: &str) -> Result<Vec<Int>, Error> {
+    use std::mem;
+
+    let (inputs, outputs) = IntcodeComputer::create_io();
+    let mut p = IntcodeComputer::new(&inputs.1, &outputs.0);
+    p.init(program)?;
+    p.run().await?;
+    mem::drop(outputs.0);
+    Ok(get_all_outputs(&outputs.1).await)
+}
+
+pub async fn get_all_outputs(receiver: &Receiver<Int>) -> Vec<Int> {
+    let mut outs = Vec::new();
+    while let Some(output) = receiver.recv().await {
+        outs.push(output);
+    }
+    outs
 }
 
 #[test]
@@ -316,6 +351,31 @@ fn day_5_examples_work() {
     assert_eq!(computer.read(4), 99);
 
     // TODO: Add rest of day 5 tests
+}
+
+#[test]
+fn relative_base_works() {
+    use async_std::task;
+
+    assert_eq!(
+        task::block_on(get_output(
+            "109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99"
+        ))
+        .unwrap(),
+        vec![109, 1, 204, -1, 1001, 100, 1, 100, 1008, 100, 16, 101, 1006, 101, 0, 99]
+    );
+
+    assert_eq!(
+        task::block_on(get_output("1102,34915192,34915192,7,4,7,99,0")).unwrap()[0]
+            .to_string()
+            .len(),
+        16
+    );
+
+    assert_eq!(
+        task::block_on(get_output("104,1125899906842624,99")).unwrap(),
+        vec![1125899906842624]
+    );
 }
 
 #[derive(Debug)]
