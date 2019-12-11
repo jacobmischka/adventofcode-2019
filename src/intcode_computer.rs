@@ -2,13 +2,14 @@ use async_std::sync::{channel, Receiver, Sender};
 
 pub const BUFFER_SIZE: usize = 50;
 
-pub type Int = i32;
+pub type Int = i64;
 
 #[derive(Debug)]
 pub struct IntcodeComputer<'a> {
     state: OperationState,
     mem: Vec<Int>,
     pos: usize,
+    relative_base: isize,
     input: &'a Receiver<Int>,
     output: &'a Sender<Int>,
 }
@@ -28,7 +29,8 @@ impl<'a> IntcodeComputer<'a> {
         Self {
             state: OperationState::Preinit,
             mem: Vec::new(),
-            pos: 0 as usize,
+            pos: 0,
+            relative_base: 0,
             input,
             output,
         }
@@ -52,6 +54,7 @@ impl<'a> IntcodeComputer<'a> {
             })
             .collect::<Result<Vec<Int>, Error>>()?;
         self.pos = 0;
+        self.relative_base = 0;
         Ok(())
     }
 
@@ -65,30 +68,37 @@ impl<'a> IntcodeComputer<'a> {
         loop {
             let inst = self.get_inst().unwrap();
             if cfg!(feature = "debug") {
-                dbg!(&inst);
+                dbg!(&self.relative_base, &inst);
             }
             match inst {
                 Add(lhs, rhs, dest) => {
-                    self.write(self.get(&dest), self.get(&lhs) + self.get(&rhs));
+                    let lhs = self.get(&lhs);
+                    let rhs = self.get(&rhs);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, lhs + rhs);
                 }
                 Multiply(lhs, rhs, dest) => {
-                    self.write(self.get(&dest), self.get(&lhs) * self.get(&rhs));
+                    let lhs = self.get(&lhs);
+                    let rhs = self.get(&rhs);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, lhs * rhs);
                 }
                 Input(dest) => {
                     let input = self.get_input().await.unwrap();
-                    self.write(self.get(&dest), input);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, input);
                 }
                 Output(src) => {
                     self.output.send(self.get(&src)).await;
                 }
                 JumpIfTrue(x, dest) => {
                     if self.get(&x) != 0 {
-                        self.pos = self.get(&dest) as _;
+                        self.pos = self.get(&dest) as usize;
                     }
                 }
                 JumpIfFalse(x, dest) => {
                     if self.get(&x) == 0 {
-                        self.pos = self.get(&dest) as _;
+                        self.pos = self.get(&dest) as usize;
                     }
                 }
                 LessThan(lhs, rhs, dest) => {
@@ -97,7 +107,8 @@ impl<'a> IntcodeComputer<'a> {
                     } else {
                         0
                     };
-                    self.write(self.get(&dest), val);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, val);
                 }
                 Equals(lhs, rhs, dest) => {
                     let val = if self.get(&lhs) == self.get(&rhs) {
@@ -105,7 +116,11 @@ impl<'a> IntcodeComputer<'a> {
                     } else {
                         0
                     };
-                    self.write(self.get(&dest), val);
+                    let dest = self.get_addr(&dest);
+                    self.write(dest, val);
+                }
+                RelativeBase(adj) => {
+                    self.relative_base += self.get(&adj) as isize;
                 }
                 Exit => {
                     self.exit();
@@ -140,14 +155,17 @@ impl<'a> IntcodeComputer<'a> {
             1 => Ok(Add(
                 Parameter(self.read_next(), ParameterMode::new(val, 0)?),
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
-                Parameter(self.read_next(), ParameterMode::Immediate),
+                Parameter(self.read_next(), ParameterMode::new(val, 2)?),
             )),
             2 => Ok(Multiply(
                 Parameter(self.read_next(), ParameterMode::new(val, 0)?),
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
-                Parameter(self.read_next(), ParameterMode::Immediate),
+                Parameter(self.read_next(), ParameterMode::new(val, 2)?),
             )),
-            3 => Ok(Input(Parameter(self.read_next(), ParameterMode::Immediate))),
+            3 => Ok(Input(Parameter(
+                self.read_next(),
+                ParameterMode::new(val, 0)?,
+            ))),
             4 => Ok(Output(Parameter(
                 self.read_next(),
                 ParameterMode::new(val, 0)?,
@@ -163,38 +181,62 @@ impl<'a> IntcodeComputer<'a> {
             7 => Ok(LessThan(
                 Parameter(self.read_next(), ParameterMode::new(val, 0)?),
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
-                Parameter(self.read_next(), ParameterMode::Immediate),
+                Parameter(self.read_next(), ParameterMode::new(val, 2)?),
             )),
             8 => Ok(Equals(
                 Parameter(self.read_next(), ParameterMode::new(val, 0)?),
                 Parameter(self.read_next(), ParameterMode::new(val, 1)?),
-                Parameter(self.read_next(), ParameterMode::Immediate),
+                Parameter(self.read_next(), ParameterMode::new(val, 2)?),
             )),
+            9 => Ok(RelativeBase(Parameter(
+                self.read_next(),
+                ParameterMode::new(val, 0)?,
+            ))),
             99 => Ok(Exit),
             _ => Err(Error::OpcodeParseError(val)),
         }
     }
 
-    fn get(&self, param: &Parameter) -> Int {
+    fn get(&mut self, param: &Parameter) -> Int {
         use ParameterMode::*;
 
         match param.1 {
-            Position => self.read(param.0),
             Immediate => param.0,
+            _ => {
+                let addr = self.get_addr(param);
+                self.read(addr)
+            }
         }
     }
 
-    pub fn read(&self, pos: Int) -> Int {
-        self.mem[pos as usize]
+    fn get_addr(&mut self, param: &Parameter) -> usize {
+        use ParameterMode::*;
+
+        match param.1 {
+            Relative => (self.relative_base + param.0 as isize) as usize,
+            _ => param.0 as usize,
+        }
+    }
+
+    pub fn read(&mut self, pos: usize) -> Int {
+        if pos >= self.mem.len() {
+            self.mem.resize((pos * 2).max(self.mem.len() * 2), 0);
+        }
+
+        self.mem[pos]
     }
 
     pub fn read_next(&mut self) -> Int {
-        let val = self.mem[self.pos];
+        let val = self.read(self.pos);
         self.inc();
         val
     }
 
-    pub fn write(&mut self, pos: Int, val: Int) -> () {
+    pub fn write(&mut self, pos: usize, val: Int) -> () {
+        if pos >= self.mem.len() {
+            self.mem.resize((pos * 2).max(self.mem.len() * 2), 0);
+        }
+
         self.mem[pos as usize] = val;
     }
 
@@ -207,6 +249,7 @@ impl<'a> IntcodeComputer<'a> {
 enum ParameterMode {
     Position,
     Immediate,
+    Relative,
 }
 
 impl ParameterMode {
@@ -214,13 +257,14 @@ impl ParameterMode {
         use ParameterMode::*;
 
         match val {
+            2 => Ok(Relative),
             1 => Ok(Immediate),
             0 | _ => Ok(Position),
         }
     }
 
     fn parse_mode(x: Int, pos: u32) -> Int {
-        ((x / 100 / (10i32.pow(pos))) % 10)
+        ((x / 100 / ((10 as Int).pow(pos))) % 10)
     }
 
     fn new(x: Int, pos: u32) -> Result<ParameterMode, Error> {
@@ -241,6 +285,7 @@ enum Instruction {
     JumpIfFalse(Parameter, Parameter),
     LessThan(Parameter, Parameter, Parameter),
     Equals(Parameter, Parameter, Parameter),
+    RelativeBase(Parameter),
     Exit,
 }
 
@@ -267,12 +312,32 @@ fn day_2_examples_work() {
 }
 
 #[allow(dead_code)]
-async fn execute_and_dump(raw: &str) -> Result<String, Error> {
+async fn execute_and_dump(program: &str) -> Result<String, Error> {
     let (inputs, outputs) = IntcodeComputer::create_io();
     let mut p = IntcodeComputer::new(&inputs.1, &outputs.0);
-    p.init(raw)?;
+    p.init(program)?;
     p.run().await?;
     Ok(p.dump())
+}
+
+#[allow(dead_code)]
+async fn get_output(program: &str) -> Result<Vec<Int>, Error> {
+    use std::mem;
+
+    let (inputs, outputs) = IntcodeComputer::create_io();
+    let mut p = IntcodeComputer::new(&inputs.1, &outputs.0);
+    p.init(program)?;
+    p.run().await?;
+    mem::drop(outputs.0);
+    Ok(get_all_outputs(&outputs.1).await)
+}
+
+pub async fn get_all_outputs(receiver: &Receiver<Int>) -> Vec<Int> {
+    let mut outs = Vec::new();
+    while let Some(output) = receiver.recv().await {
+        outs.push(output);
+    }
+    outs
 }
 
 #[test]
@@ -286,6 +351,31 @@ fn day_5_examples_work() {
     assert_eq!(computer.read(4), 99);
 
     // TODO: Add rest of day 5 tests
+}
+
+#[test]
+fn relative_base_works() {
+    use async_std::task;
+
+    assert_eq!(
+        task::block_on(get_output(
+            "109,1,204,-1,1001,100,1,100,1008,100,16,101,1006,101,0,99"
+        ))
+        .unwrap(),
+        vec![109, 1, 204, -1, 1001, 100, 1, 100, 1008, 100, 16, 101, 1006, 101, 0, 99]
+    );
+
+    assert_eq!(
+        task::block_on(get_output("1102,34915192,34915192,7,4,7,99,0")).unwrap()[0]
+            .to_string()
+            .len(),
+        16
+    );
+
+    assert_eq!(
+        task::block_on(get_output("104,1125899906842624,99")).unwrap(),
+        vec![1125899906842624]
+    );
 }
 
 #[derive(Debug)]
