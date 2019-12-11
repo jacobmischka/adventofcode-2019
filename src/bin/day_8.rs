@@ -1,4 +1,4 @@
-use std::{env, io};
+use std::{env, fmt, io};
 
 fn main() {
     let mut args = env::args();
@@ -12,7 +12,7 @@ fn main() {
 
     let image = Image::new(width, height, &input);
     println!("Part 1: {}", find_fewest_zeros(&image));
-    println!("Part 2: {}", image.decode());
+    println!("Part 2: \n{}", image);
 }
 
 fn find_fewest_zeros(image: &Image) -> u32 {
@@ -62,14 +62,16 @@ impl Image {
         let chars = image_data.chars().filter(|c| !c.is_whitespace());
 
         for (i, c) in chars.enumerate() {
-            let x: u32 = c.to_digit(10).unwrap();
-            layer.push(x);
-
-            if (i + 1) % layer_size == 0 {
+            if i > 0 && i % layer_size == 0 {
                 layers.push(layer);
                 layer = Vec::new();
             }
+
+            let x: u32 = c.to_digit(10).unwrap();
+            layer.push(x);
         }
+
+        layers.push(layer);
 
         Image {
             width,
@@ -83,7 +85,7 @@ impl Image {
 
         for i in 0..image.len() {
             for layer in self.layers.iter() {
-                if layer[i] != 2 {
+                if i < layer.len() && layer[i] != 2 {
                     image[i] = layer[i];
                     break;
                 }
@@ -94,10 +96,29 @@ impl Image {
     }
 }
 
+impl fmt::Display for Image {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let decoded = self.decode();
+        let mut lines = Vec::new();
+        let mut s = &decoded[..];
+        while s.len() >= self.width as usize {
+            let (left, right) = s.split_at(self.width as usize);
+            lines.push(left);
+            s = right;
+        }
+        let out: String = lines.join("\n").replace("0", " ").replace("1", "█");
+
+        write!(f, "{}", out)
+    }
+}
+
 #[test]
 fn example_works() {
     let image = Image::new(2, 2, "0222112222120000");
     assert_eq!(&image.decode(), "0110");
+
+    let image = Image::new(2, 2, "2222 2122 00  ");
+    assert_eq!(&image.decode(), "0122");
 
     let image = Image::new(2, 2, "222221210010");
     assert_eq!(&image.decode(), "0111");
