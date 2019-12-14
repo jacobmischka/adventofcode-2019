@@ -1,8 +1,10 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::From;
 use std::hash::Hash;
 use std::io::{self, BufRead};
 use std::ops::Sub;
+
+use std::f64::consts::{FRAC_PI_2, PI};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct Coord(i32, i32);
@@ -31,6 +33,46 @@ impl Vector {
 
         Vector(x / gcf, y / gcf)
     }
+}
+
+type Angle = f64;
+
+impl From<&Vector> for Angle {
+    fn from(v: &Vector) -> Self {
+        if v.1 == 0 {
+            if v.0 > 0 {
+                FRAC_PI_2
+            } else {
+                PI + FRAC_PI_2
+            }
+        } else {
+            let angle = (-1.0 * v.0 as f64 / v.1 as f64).atan();
+            if v.1 > 0 {
+                angle + PI
+            } else if angle < 0.0 {
+                angle + PI + PI
+            } else {
+                angle
+            }
+        }
+    }
+}
+
+#[test]
+fn angle_vector_works() {
+    use std::f64::consts::FRAC_PI_4;
+
+    assert_eq!(Angle::from(&Vector::new(0, -1)), 0.0);
+    assert_eq!(Angle::from(&Vector::new(1, -1)), FRAC_PI_4);
+    assert_eq!(Angle::from(&Vector::new(1, 0)), FRAC_PI_2);
+    assert_eq!(Angle::from(&Vector::new(1, 1)), FRAC_PI_2 + FRAC_PI_4);
+    assert_eq!(Angle::from(&Vector::new(0, 1)), PI);
+    assert_eq!(Angle::from(&Vector::new(-1, 1)), PI + FRAC_PI_4);
+    assert_eq!(Angle::from(&Vector::new(-1, 0)), PI + FRAC_PI_2);
+    assert_eq!(
+        Angle::from(&Vector::new(-1, -1)),
+        PI + FRAC_PI_2 + FRAC_PI_4
+    );
 }
 
 impl From<&Path> for Vector {
@@ -65,13 +107,11 @@ impl Sub for &Coord {
 
 fn main() {
     let mut coords: Vec<Coord> = Vec::new();
-    let mut max = Coord(0, 0);
-    for (x, line) in io::stdin().lock().lines().enumerate() {
-        for (y, c) in line.unwrap().chars().enumerate() {
+    for (y, line) in io::stdin().lock().lines().enumerate() {
+        for (x, c) in line.unwrap().chars().enumerate() {
             if c == '#' {
                 coords.push(Coord(x as _, y as _));
             }
-            max = Coord(x as _, y as _);
         }
     }
 
@@ -89,7 +129,7 @@ fn main() {
 
     println!("Part 1: {}", max_detectable);
 
-    let vaporized = vaporize(&monitoring_station, coords);
+    let vaporized = vaporize(&monitoring_station, coords.as_slice());
     let two_hundredth = &vaporized[199];
     println!("Part 2: {}", two_hundredth.0 * 100 + two_hundredth.1);
 }
@@ -106,76 +146,41 @@ fn count_detectable(coord: &Coord, coords: &[Coord]) -> u32 {
     set.len() as _
 }
 
-fn vaporize(laser: &Coord, mut asteroids: Vec<Coord>) -> Vec<Coord> {
+fn vaporize<'a, 'b>(laser: &'a Coord, asteroids: &'b [Coord]) -> Vec<&'b Coord> {
     let mut vaporized = Vec::new();
-    let radius = 2000u32;
 
-    let mut target = Coord(laser.0, laser.1 - radius as i32);
+    let mut angle_map: HashMap<String, Vec<(usize, Path)>> = HashMap::new();
+    let mut angles: Vec<Angle> = Vec::new();
 
-    loop {
-        let laser_vector: Vector = (&(&target - &laser)).into();
+    for (i, asteroid) in asteroids.iter().enumerate() {
+        let a_path: Path = asteroid - laser;
+        let angle = Angle::from(&Vector::from(&a_path));
+        angle_map
+            .entry(format!("{:0.*}", 10, angle))
+            .or_default()
+            .push((i, a_path));
+        angles.push(angle);
+    }
 
-        let mut min_distance = std::f64::MAX;
-        let mut asteroid_index_to_vaporize: Option<usize> = None;
+    let angles: HashSet<String> = angles.iter().map(|a| format!("{:0.*}", 10, a)).collect();
+    let mut angles: Vec<String> = angles.into_iter().collect();
+    angles.sort_unstable_by(|a, b| a.cmp(&b));
 
-        for (i, asteroid) in asteroids.iter().enumerate() {
-            let a_path: Path = asteroid - laser;
-            if laser_vector == a_path {
-                let len = a_path.len();
-                if a_path.len() < min_distance {
-                    asteroid_index_to_vaporize = Some(i);
-                    min_distance = len;
-                }
+    for (_, v) in angle_map.iter_mut() {
+        v.sort_unstable_by(|a, b| a.1.len().partial_cmp(&b.1.len()).unwrap());
+    }
+
+    while vaporized.len() < asteroids.len() {
+        for angle in angles.iter() {
+            let v = angle_map.get_mut(angle).unwrap();
+            if !v.is_empty() {
+                let (i, _) = v.remove(0);
+                vaporized.push(&asteroids[i]);
             }
         }
-
-        if let Some(i) = asteroid_index_to_vaporize {
-            vaporized.push(asteroids.remove(i));
-            dbg!(vaporized.len(), asteroids.len());
-        }
-
-        if asteroids.is_empty() {
-            break;
-        }
-
-        target = rotate_clockwise(&target, &laser, radius);
     }
 
     vaporized
-}
-
-fn rotate_clockwise(current: &Coord, center: &Coord, radius: u32) -> Coord {
-    let Coord(x, y) = current;
-    let x = *x;
-    let y = *y;
-    let min = Coord(center.0 - radius as i32, center.1 - radius as i32);
-    let max = Coord(center.0 + radius as i32, center.1 + radius as i32);
-    if y == min.1 {
-        if x < max.0 {
-            Coord(x + 1, y)
-        } else {
-            Coord(x, y + 1)
-        }
-    } else if x == max.0 {
-        if y < max.1 {
-            Coord(x, y + 1)
-        } else {
-            Coord(x - 1, y)
-        }
-    } else if y == max.1 {
-        if x > min.0 {
-            Coord(x - 1, y)
-        } else {
-            Coord(x, y - 1)
-        }
-    } else {
-        // x == min.0
-        if y > min.1 {
-            Coord(x, y - 1)
-        } else {
-            Coord(x + 1, y)
-        }
-    }
 }
 
 fn gcd(a: u32, b: u32) -> u32 {
