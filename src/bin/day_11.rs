@@ -1,11 +1,10 @@
 use async_std::task;
 
+use adventofcode_2019::grid::*;
 use adventofcode_2019::intcode_computer::*;
 
-use std::collections::HashMap;
 use std::convert::{Into, TryFrom};
 use std::default::Default;
-use std::ops::{Deref, DerefMut};
 use std::{fmt, io, mem};
 
 fn main() {
@@ -20,7 +19,9 @@ fn main() {
     println!("Part 2: \n{}", grid);
 }
 
-async fn run_painting(program: &str, initial_input: Int) -> Grid {
+type PanelGrid = Grid<PanelColor>;
+
+async fn run_painting(program: &str, initial_input: Int) -> PanelGrid {
     let ((input_sender, input_receiver), (output_sender, output_receiver)) =
         IntcodeComputer::create_io();
     let mut computer = IntcodeComputer::new(&input_receiver, &output_sender);
@@ -29,7 +30,7 @@ async fn run_painting(program: &str, initial_input: Int) -> Grid {
 
     let t = task::spawn(async move {
         let mut robot = HullPaintingRobot::default();
-        let mut grid = Grid::new();
+        let mut grid = PanelGrid::new();
 
         input_sender.send(initial_input).await;
         while let Some(new_color) = output_receiver.recv().await {
@@ -59,28 +60,6 @@ async fn run_painting(program: &str, initial_input: Int) -> Grid {
     t.await
 }
 
-struct Grid(HashMap<Coord, PanelColor>);
-
-impl Grid {
-    fn new() -> Self {
-        Self(HashMap::new())
-    }
-}
-
-impl Deref for Grid {
-    type Target = HashMap<Coord, PanelColor>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for Grid {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
 impl fmt::Display for PanelColor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         use PanelColor::*;
@@ -96,30 +75,6 @@ impl fmt::Display for PanelColor {
     }
 }
 
-impl fmt::Display for Grid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let min_x = self.keys().fold(std::i64::MAX, |acc, c| acc.min(c.0));
-        let max_x = self.keys().fold(std::i64::MIN, |acc, c| acc.max(c.0));
-        let min_y = self.keys().fold(std::i64::MAX, |acc, c| acc.min(c.1));
-        let max_y = self.keys().fold(std::i64::MIN, |acc, c| acc.max(c.1));
-
-        for y in min_y..=max_y {
-            for x in min_x..=max_x {
-                let color = match self.get(&Coord(x, y)) {
-                    Some(color) => *color,
-                    _ => PanelColor::default(),
-                };
-                write!(f, "{}", color)?;
-            }
-            write!(f, "\n")?;
-        }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
-struct Coord(Int, Int);
-
 #[derive(Debug, Clone, Default)]
 struct HullPaintingRobot {
     pos: Coord,
@@ -127,12 +82,12 @@ struct HullPaintingRobot {
 }
 
 impl HullPaintingRobot {
-    fn turn(&mut self, turn_input: Int) -> Result<(), Error> {
+    pub fn turn(&mut self, turn_input: Int) -> Result<(), Error> {
         self.facing = self.facing.turn(turn_input)?;
         Ok(())
     }
 
-    fn move_forward(&mut self) {
+    pub fn move_forward(&mut self) {
         use Direction::*;
 
         let step = 1;

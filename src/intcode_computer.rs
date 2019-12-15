@@ -66,7 +66,7 @@ impl<'a> IntcodeComputer<'a> {
         use Instruction::*;
 
         loop {
-            let inst = self.get_inst().unwrap();
+            let inst = self.get_inst()?;
             if cfg!(feature = "debug") {
                 dbg!(&self.relative_base, &inst);
             }
@@ -84,7 +84,7 @@ impl<'a> IntcodeComputer<'a> {
                     self.write(dest, lhs * rhs);
                 }
                 Input(dest) => {
-                    let input = self.get_input().await.unwrap();
+                    let input = self.get_input().await.ok_or(Error::InvalidInputError)?;
                     let dest = self.get_addr(&dest);
                     self.write(dest, input);
                 }
@@ -137,7 +137,7 @@ impl<'a> IntcodeComputer<'a> {
     }
 
     #[allow(dead_code)]
-    fn dump(&self) -> String {
+    fn dump_mem(&self) -> String {
         self.mem
             .iter()
             .map(|i| i.to_string())
@@ -317,7 +317,7 @@ async fn execute_and_dump(program: &str) -> Result<String, Error> {
     let mut p = IntcodeComputer::new(&inputs.1, &outputs.0);
     p.init(program)?;
     p.run().await?;
-    Ok(p.dump())
+    Ok(p.dump_mem())
 }
 
 #[allow(dead_code)]
@@ -382,4 +382,5 @@ fn relative_base_works() {
 pub enum Error {
     ProgramParseError(String),
     OpcodeParseError(Int),
+    InvalidInputError,
 }
