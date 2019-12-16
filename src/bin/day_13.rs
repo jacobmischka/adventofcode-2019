@@ -25,7 +25,7 @@ fn main() {
     println!("Part 1: {}", num_blocks);
 
     input.replace_range(..1, "2");
-    let grid = play(&input);
+    play(&input);
 }
 
 fn play(program: &str) -> GameGrid {
@@ -39,36 +39,20 @@ fn play(program: &str) -> GameGrid {
     let rb = rustbox.clone();
     let running = run.clone();
 
-    // let arcade = computer.clone();
     let io = task::spawn(async move {
         let wait_duration = Duration::new(1, 0);
         while *running.read().await {
             if cfg!(feature = "slowgamemode") {
                 if let Ok(Event::KeyEvent(key)) = rb.poll_event(false) {
-                    match key {
-                        Key::Right => {
-                            in_sender.send(1).await;
-                        }
-                        Key::Left => {
-                            in_sender.send(-1).await;
-                        }
-                        Key::Char(' ') => {
-                            in_sender.send(0).await;
-                        }
-                        _ => {}
-                    };
+                    if let Some(input) = get_input(key) {
+                        in_sender.send(input).await;
+                    }
                 }
             } else {
                 if let Ok(Event::KeyEvent(key)) = rb.peek_event(wait_duration, false) {
-                    match key {
-                        Key::Right => {
-                            in_sender.send(1).await;
-                        }
-                        Key::Left => {
-                            in_sender.send(-1).await;
-                        }
-                        _ => {}
-                    };
+                    if let Some(input) = get_input(key) {
+                        in_sender.send(input).await;
+                    }
                 } else {
                     in_sender.send(0).await;
                 }
@@ -122,6 +106,21 @@ fn play(program: &str) -> GameGrid {
     task::block_on(t)
 }
 
+fn get_input(key: Key) -> Option<Int> {
+    match key {
+        Key::Right => Some(1),
+        Key::Left => Some(-1),
+        Key::Char(' ') => {
+            if cfg!(feature = "slowgamemode") {
+                Some(0)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 type GameGrid = Grid<Tile>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,8 +164,8 @@ impl fmt::Display for Tile {
             match self {
                 Empty => " ",
                 Wall => "█",
-                Block => "#",
-                HorizontalPaddle => "-",
+                Block => "□",
+                HorizontalPaddle => "―",
                 Ball => "•",
             }
         )
