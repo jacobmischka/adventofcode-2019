@@ -1,5 +1,11 @@
 use async_std::sync::{channel, Receiver, Sender};
 
+use std::{
+    fmt,
+    ops::{Deref, DerefMut},
+    str::FromStr,
+};
+
 pub const BUFFER_SIZE: usize = 50;
 
 pub type Int = i64;
@@ -20,6 +26,54 @@ pub enum OperationState {
     Ready,
     Running,
     Exited,
+}
+
+#[derive(Debug, Clone)]
+pub struct IntVec(pub Vec<Int>);
+
+impl IntVec {
+    pub fn into_inner(self) -> Vec<Int> {
+        self.0
+    }
+}
+
+impl Deref for IntVec {
+    type Target = Vec<Int>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for IntVec {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl fmt::Display for IntVec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}",
+            self.iter()
+                .map(|i| i.to_string())
+                .collect::<Vec<String>>()
+                .join(",")
+        )
+    }
+}
+
+impl FromStr for IntVec {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(IntVec(
+            s.split(',')
+                .map(|s| s.parse::<Int>().map_err(|_| Error::InvalidInputError))
+                .collect::<Result<Vec<Int>, Error>>()?,
+        ))
+    }
 }
 
 pub type IOChannels = (Sender<Int>, Receiver<Int>);
@@ -46,13 +100,7 @@ impl<'a> IntcodeComputer<'a> {
 
     pub fn init(&mut self, program: &str) -> Result<(), Error> {
         self.state = OperationState::Ready;
-        self.mem = program
-            .split(',')
-            .map(|s| {
-                s.parse::<Int>()
-                    .map_err(|_| Error::ProgramParseError(s.to_string()))
-            })
-            .collect::<Result<Vec<Int>, Error>>()?;
+        self.mem = IntVec::from_str(program)?.into_inner();
         self.pos = 0;
         self.relative_base = 0;
         Ok(())

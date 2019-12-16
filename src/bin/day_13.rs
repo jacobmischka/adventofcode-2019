@@ -2,21 +2,43 @@ use async_std::{
     sync::{Arc, RwLock},
     task,
 };
+use clap::{App, Arg};
 use rustbox::{Color, Event, Key, RustBox, RB_NORMAL};
 
 use adventofcode_2019::grid::*;
 use adventofcode_2019::intcode_computer::*;
 
+use std::collections::VecDeque;
 use std::convert::TryFrom;
 use std::time::Duration;
-use std::{fmt, io, mem};
+use std::{fmt, fs, io, mem, str::FromStr};
 
 fn main() {
     let mut line = String::new();
     let _ = io::stdin().read_line(&mut line).unwrap();
     let mut input = line.trim().to_string();
 
-    let grid = play(&input);
+    let matches = App::new("Intcode arcade brick breaker")
+        .version("1.0")
+        .arg(
+            Arg::with_name("inputs-in")
+                .help("where to load your previous inputs from")
+                .short("i")
+                .long("inputs-in")
+                .value_name("FILE")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("inputs-out")
+                .help("where to dump your inputs")
+                .short("o")
+                .long("inputs-out")
+                .value_name("FILE")
+                .takes_value(true),
+        )
+        .get_matches();
+
+    let (grid, _inputs) = play(&input, vec![0].into());
 
     let num_blocks = grid.values().fold(
         0,
@@ -24,11 +46,27 @@ fn main() {
     );
     println!("Part 1: {}", num_blocks);
 
+    let loaded_inputs: VecDeque<Int> = match matches.value_of("inputs-in") {
+        Some(path) => IntVec::from_str(
+            fs::read_to_string(path)
+                .expect("failed loading inputs file")
+                .trim(),
+        )
+        .expect("failed deserializing inputs file")
+        .into_inner()
+        .into(),
+        None => VecDeque::new(),
+    };
+
     input.replace_range(..1, "2");
-    play(&input);
+    let (_grid, inputs) = play(&input, loaded_inputs);
+
+    if let Some(outpath) = matches.value_of("inputs-out") {
+        fs::write(outpath, IntVec(inputs).to_string()).unwrap();
+    }
 }
 
-fn play(program: &str) -> GameGrid {
+fn play(program: &str, mut loaded_inputs: VecDeque<Int>) -> (GameGrid, Vec<Int>) {
     let ((in_sender, in_receiver), (out_sender, out_receiver)) = IntcodeComputer::create_io();
     let mut computer = IntcodeComputer::new(&in_receiver, &out_sender);
     computer.init(program).unwrap();
@@ -40,24 +78,33 @@ fn play(program: &str) -> GameGrid {
     let running = run.clone();
 
     let io = task::spawn(async move {
+        let mut inputs: Vec<Int> = Vec::new();
         let wait_duration = Duration::new(1, 0);
         while *running.read().await {
-            if cfg!(feature = "slowgamemode") {
-                if let Ok(Event::KeyEvent(key)) = rb.poll_event(false) {
-                    if let Some(input) = get_input(key) {
-                        in_sender.send(input).await;
+            if let Some(input) = match loaded_inputs.pop_front() {
+                Some(input) => Some(input),
+                None => {
+                    if cfg!(feature = "slowgamemode") {
+                        if let Ok(Event::KeyEvent(key)) = rb.poll_event(false) {
+                            get_input(key)
+                        } else {
+                            None
+                        }
+                    } else {
+                        if let Ok(Event::KeyEvent(key)) = rb.peek_event(wait_duration, false) {
+                            get_input(key)
+                        } else {
+                            Some(0)
+                        }
                     }
                 }
-            } else {
-                if let Ok(Event::KeyEvent(key)) = rb.peek_event(wait_duration, false) {
-                    if let Some(input) = get_input(key) {
-                        in_sender.send(input).await;
-                    }
-                } else {
-                    in_sender.send(0).await;
-                }
-            }
+            } {
+                inputs.push(input);
+                in_sender.send(input).await;
+            };
         }
+
+        inputs
     });
 
     let rb = rustbox.clone();
@@ -101,23 +148,21 @@ fn play(program: &str) -> GameGrid {
     });
     mem::drop(computer);
     mem::drop(out_sender);
-    task::block_on(io);
 
-    task::block_on(t)
+    (task::block_on(t), task::block_on(io))
 }
 
 fn get_input(key: Key) -> Option<Int> {
     match key {
         Key::Right => Some(1),
         Key::Left => Some(-1),
-        Key::Char(' ') => {
+        _ => {
             if cfg!(feature = "slowgamemode") {
                 Some(0)
             } else {
                 None
             }
         }
-        _ => None,
     }
 }
 
