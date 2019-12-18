@@ -79,7 +79,8 @@ fn play(program: &str, mut loaded_inputs: VecDeque<Int>) -> (GameGrid, Vec<Int>)
 
     let io = task::spawn(async move {
         let mut inputs: Vec<Int> = Vec::new();
-        let wait_duration = Duration::new(1, 0);
+        let wait_duration = Duration::from_millis(500);
+
         while *running.read().await {
             if let Some(input) = match loaded_inputs.pop_front() {
                 Some(input) => Some(input),
@@ -156,13 +157,8 @@ fn get_input(key: Key) -> Option<Int> {
     match key {
         Key::Right => Some(1),
         Key::Left => Some(-1),
-        _ => {
-            if cfg!(feature = "slowgamemode") {
-                Some(0)
-            } else {
-                None
-            }
-        }
+        Key::Ctrl('c') => std::process::exit(0),
+        _ => Some(0),
     }
 }
 

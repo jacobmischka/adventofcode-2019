@@ -18,6 +18,6 @@ serde = { version = "1.0.103", features = ["derive"] }
 clap = "2.33.0"
 
 [features]
-default = []
+default = ["slowgamemode"]
 debug = []
 slowgamemode = []
