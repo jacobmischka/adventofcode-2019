@@ -14,10 +14,6 @@ use std::time::Duration;
 use std::{fmt, fs, io, mem, str::FromStr};
 
 fn main() {
-    let mut line = String::new();
-    let _ = io::stdin().read_line(&mut line).unwrap();
-    let mut input = line.trim().to_string();
-
     let matches = App::new("Intcode arcade brick breaker")
         .version("1.0")
         .arg(
@@ -37,6 +33,10 @@ fn main() {
                 .takes_value(true),
         )
         .get_matches();
+
+    let mut line = String::new();
+    let _ = io::stdin().read_line(&mut line).unwrap();
+    let mut input = line.trim().to_string();
 
     let (grid, _inputs) = play(&input, vec![0].into());
 
