@@ -6,6 +6,8 @@ use std::io::{self, BufRead};
 use std::ops::Mul;
 use std::str::FromStr;
 
+const ORE_TOTAL: u64 = 1_000_000_000_000;
+
 fn main() {
     let stdin = io::stdin();
     let reactions: HashMap<String, Reaction> = stdin
@@ -17,10 +19,52 @@ fn main() {
 
     let fuel_reaction = reactions.get("FUEL").unwrap();
     let mut stockpile = HashMap::new();
-    println!(
-        "Part 1: {}",
-        fuel_reaction.get_ore_requirements(&reactions, &mut stockpile)
-    );
+    let single_consumption = fuel_reaction.produce(&reactions, &mut stockpile);
+
+    println!("Part 1: {}", single_consumption);
+
+    let mut ore_remaining = ORE_TOTAL - single_consumption;
+
+    let mut after_one = stockpile.clone();
+    after_one.remove("FUEL");
+
+    let mut cycle_consumption = 0;
+    loop {
+        let consumed = fuel_reaction.produce(&reactions, &mut stockpile);
+        ore_remaining -= consumed;
+        cycle_consumption += consumed;
+
+        if after_one
+            .iter()
+            .all(|(k, v)| stockpile.get(k).unwrap() == v)
+        {
+            break;
+        }
+    }
+
+    let num_cycles = ore_remaining / cycle_consumption;
+
+    ore_remaining -= cycle_consumption * num_cycles;
+
+    let fuel_created = stockpile.get_mut("FUEL").unwrap();
+    *fuel_created += (*fuel_created - 1) * num_cycles;
+
+    while ore_remaining > 0 {
+        if let Some(remaining) =
+            ore_remaining.checked_sub(fuel_reaction.produce(&reactions, &mut stockpile))
+        {
+            ore_remaining = remaining;
+        } else {
+            break;
+        }
+    }
+
+    let mut fuel_created = *stockpile.get("FUEL").unwrap();
+    if ore_remaining > 0 {
+        fuel_created -= 1;
+    }
+
+    println!("Part 2: {}", fuel_created);
 }
 
 #[derive(Debug, Clone)]
@@ -30,30 +74,38 @@ struct Reaction {
 }
 
 impl Reaction {
-    fn get_ore_requirements(
+    fn produce(
         &self,
         reactions: &HashMap<String, Reaction>,
-        stockpile: &mut HashMap<String, u32>,
-    ) -> u32 {
-        let mut amount = 0;
+        stockpile: &mut HashMap<String, u64>,
+    ) -> u64 {
+        let mut ore_consumed = 0;
 
         for input in self.inputs.iter() {
             if &input.unit == "ORE" {
-                amount += input.amount;
+                ore_consumed += input.amount;
             } else {
                 let reaction = reactions.get(&input.unit).unwrap();
+
                 let in_stockpile = stockpile.entry(input.unit.to_string()).or_default();
                 let used_from_stockpile = input.amount.min(*in_stockpile);
                 *in_stockpile -= used_from_stockpile;
 
                 let num_needed = input.amount - used_from_stockpile;
                 let reactions_needed =
-                    (num_needed as f32 / reaction.output.amount as f32).ceil() as u32;
-                amount += reaction.get_ore_requirements(reactions, stockpile) * reactions_needed;
+                    (num_needed as f32 / reaction.output.amount as f32).ceil() as usize;
+
+                for _ in 0..reactions_needed {
+                    ore_consumed += reaction.produce(reactions, stockpile);
+                }
+
+                *stockpile.entry(input.unit.to_string()).or_default() -= num_needed;
             }
         }
 
-        amount
+        *stockpile.entry(self.output.unit.to_string()).or_default() += self.output.amount;
+
+        ore_consumed
     }
 }
 
@@ -86,13 +138,13 @@ impl FromStr for Reaction {
 #[derive(Debug, Clone)]
 struct Measurement {
     unit: String,
-    amount: u32,
+    amount: u64,
 }
 
-impl Mul<u32> for Measurement {
+impl Mul<u64> for Measurement {
     type Output = Self;
 
-    fn mul(mut self, rhs: u32) -> Self {
+    fn mul(mut self, rhs: u64) -> Self {
         self.amount *= rhs;
         self
     }
