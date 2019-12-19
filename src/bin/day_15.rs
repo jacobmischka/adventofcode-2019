@@ -15,7 +15,7 @@ fn main() {
     let _ = io::stdin().read_line(&mut line).unwrap();
     let input = line.trim().to_string();
 
-    let grid = run(&input);
+    run(&input);
 }
 
 fn run(program: &str) -> TileGrid {
@@ -23,42 +23,46 @@ fn run(program: &str) -> TileGrid {
     let mut computer = IntcodeComputer::new(&in_receiver, &out_sender);
     computer.init(program).unwrap();
 
-    let rustbox = Arc::new(RustBox::init(Default::default()).expect("failed creating rustbox"));
-    let run = Arc::new(RwLock::new(false));
-
-    let rb = rustbox.clone();
-    let running = run.clone();
-
-    let rb = rustbox.clone();
+    let rb = RustBox::init(Default::default()).expect("failed creating rustbox");
     let t = task::spawn(async move {
         let mut grid = TileGrid::new();
-        let mut current_coord = Coord(40, 40);
+        let mut current_coord = Coord(40, 20);
         grid.insert(current_coord.clone(), Tile::Droid);
+        grid.draw(&rb);
+        rb.present();
 
         let mut movement_command = wait_for_movement_command(&rb).await;
-        in_sender.send(movement_command.into()).await;
+        in_sender.send((&movement_command).into()).await;
 
         while let Some(x) = out_receiver.recv().await {
-            let status = out_receiver.recv().await.expect("failed getting status");
-            let value = out_receiver
-                .recv()
-                .await
-                .expect("failed getting output value");
+            let status = StatusCode::try_from(x).unwrap();
+            dbg!(&status, &grid);
+            match status {
+                StatusCode::HitWall => {
+                    grid.insert(movement_command.move_from(&current_coord), Tile::Wall);
+                }
+                StatusCode::MoveSuccess => {
+                    *grid.get_mut(&current_coord).unwrap() = Tile::Empty;
+                    current_coord = movement_command.move_from(&current_coord);
+                    grid.insert(current_coord.clone(), Tile::Droid);
+                }
+                StatusCode::ReachedOxygenSystem => {
+                    current_coord = movement_command.move_from(&current_coord);
+                    grid.insert(current_coord.clone(), Tile::OxygenSystem);
+                }
+            };
 
             grid.draw(&rb);
             rb.present();
             movement_command = wait_for_movement_command(&rb).await;
-            in_sender.send(movement_command.into()).await;
+            in_sender.send((&movement_command).into()).await;
         }
 
         grid
     });
 
-    let running = run.clone();
     task::block_on(async {
-        *running.write().await = true;
         computer.run().await.expect("failed running computer");
-        *running.write().await = false;
     });
     mem::drop(computer);
     mem::drop(out_sender);
@@ -87,27 +91,31 @@ enum MovementCommand {
 }
 
 impl MovementCommand {
-    fn move_from(&self, c: &mut Coord) {
+    fn move_from(&self, c: &Coord) -> Coord {
         use MovementCommand::*;
+
+        let mut c = c.clone();
 
         match self {
             North => {
-                c.0 -= 1;
-            }
-            South => {
-                c.0 += 1;
-            }
-            West => {
                 c.1 -= 1;
             }
-            East => {
+            South => {
                 c.1 += 1;
             }
+            West => {
+                c.0 -= 1;
+            }
+            East => {
+                c.0 += 1;
+            }
         }
+
+        c
     }
 }
 
-impl Into<Int> for MovementCommand {
+impl Into<Int> for &MovementCommand {
     fn into(self) -> Int {
         use MovementCommand::*;
 
@@ -143,8 +151,10 @@ enum Tile {
     Empty,
     Wall,
     Droid,
+    OxygenSystem,
 }
 
+#[derive(Debug)]
 enum StatusCode {
     HitWall,
     MoveSuccess,
@@ -182,8 +192,9 @@ impl fmt::Display for Tile {
             match self {
                 Unknown => "?",
                 Empty => " ",
-                Wall => "█",
-                Droid => "🤖",
+                Wall => "#",
+                Droid => "D",
+                OxygenSystem => "O",
             }
         )
     }

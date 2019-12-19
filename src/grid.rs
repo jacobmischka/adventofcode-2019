@@ -7,6 +7,7 @@ use std::ops::{Deref, DerefMut};
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Coord(pub i64, pub i64);
 
+#[derive(Debug, Clone)]
 pub struct Grid<T>(HashMap<Coord, T>);
 
 impl<T> Grid<T> {
