@@ -1,6 +1,6 @@
 use rustbox::{Color, RustBox, RB_NORMAL};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::ops::{Deref, DerefMut};
 
@@ -9,6 +9,8 @@ pub struct Coord(pub i64, pub i64);
 
 #[derive(Debug, Clone)]
 pub struct Grid<T>(HashMap<Coord, T>);
+
+pub struct GridItemVec<T>(VecDeque<T>);
 
 impl<T> Grid<T> {
     pub fn new() -> Self {
@@ -39,6 +41,20 @@ impl<T> Grid<T> {
         }
 
         self.0 = map;
+    }
+}
+
+pub trait Fillable<T: Clone> {
+    fn fill(&mut self, x_bounds: (i64, i64), y_bounds: (i64, i64), item: T);
+}
+
+impl<T: Clone> Fillable<T> for Grid<T> {
+    fn fill(&mut self, (x_min, x_max): (i64, i64), (y_min, y_max): (i64, i64), item: T) {
+        for x in x_min..x_max {
+            for y in y_min..y_max {
+                self.entry(Coord(x, y)).or_insert(item.clone());
+            }
+        }
     }
 }
 
@@ -80,6 +96,20 @@ impl<T> DerefMut for Grid<T> {
     }
 }
 
+impl<T> Deref for GridItemVec<T> {
+    type Target = VecDeque<T>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl<T> DerefMut for GridItemVec<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
 impl<T> fmt::Display for Grid<T>
 where
     T: fmt::Display + Default,
@@ -100,5 +130,23 @@ where
             write!(f, "\n")?;
         }
         Ok(())
+    }
+}
+
+impl<T> fmt::Display for GridItemVec<T>
+where
+    T: fmt::Display + Default,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let default = T::default();
+
+        write!(
+            f,
+            "{}",
+            match self.front() {
+                Some(item) => item,
+                _ => &default,
+            }
+        )
     }
 }

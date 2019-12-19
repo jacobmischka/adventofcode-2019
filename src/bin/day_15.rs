@@ -1,14 +1,11 @@
-use async_std::{
-    sync::{Arc, RwLock, Sender},
-    task,
-};
+use async_std::task;
 use rustbox::{Event, Key, RustBox};
 
 use adventofcode_2019::grid::*;
 use adventofcode_2019::intcode_computer::*;
 
 use std::convert::TryFrom;
-use std::{fmt, io, mem, str::FromStr};
+use std::{fmt, io, mem};
 
 fn main() {
     let mut line = String::new();
@@ -26,7 +23,8 @@ fn run(program: &str) -> TileGrid {
     let rb = RustBox::init(Default::default()).expect("failed creating rustbox");
     let t = task::spawn(async move {
         let mut grid = TileGrid::new();
-        let mut current_coord = Coord(40, 20);
+        let starting_coord = Coord(40, 20);
+        let mut current_coord = starting_coord.clone();
         grid.insert(current_coord.clone(), Tile::Droid);
         grid.draw(&rb);
         rb.present();
@@ -36,13 +34,16 @@ fn run(program: &str) -> TileGrid {
 
         while let Some(x) = out_receiver.recv().await {
             let status = StatusCode::try_from(x).unwrap();
-            dbg!(&status, &grid);
             match status {
                 StatusCode::HitWall => {
                     grid.insert(movement_command.move_from(&current_coord), Tile::Wall);
                 }
                 StatusCode::MoveSuccess => {
-                    *grid.get_mut(&current_coord).unwrap() = Tile::Empty;
+                    *grid.get_mut(&current_coord).unwrap() = if current_coord == starting_coord {
+                        Tile::Start
+                    } else {
+                        Tile::Empty
+                    };
                     current_coord = movement_command.move_from(&current_coord);
                     grid.insert(current_coord.clone(), Tile::Droid);
                 }
@@ -147,6 +148,7 @@ type TileGrid = Grid<Tile>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Tile {
+    Start,
     Unknown,
     Empty,
     Wall,
@@ -190,8 +192,9 @@ impl fmt::Display for Tile {
             f,
             "{}",
             match self {
-                Unknown => "?",
-                Empty => " ",
+                Start => "*",
+                Unknown => " ",
+                Empty => ".",
                 Wall => "#",
                 Droid => "D",
                 OxygenSystem => "O",
