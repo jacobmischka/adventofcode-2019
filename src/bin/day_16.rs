@@ -17,7 +17,7 @@ fn main() {
     let part_1: String = nums.iter().take(8).map(|x| x.to_string()).collect();
 
     println!("Part 1: {}", part_1);
-    println!("Part 2: {}", do_part_2(&line));
+    println!("Part 2: {}", do_part_2(line.trim()));
 }
 
 fn do_part_2(s: &str) -> String {
