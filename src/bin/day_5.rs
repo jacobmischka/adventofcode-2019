@@ -14,10 +14,10 @@ fn main() {
 
     computer.init(&input).unwrap();
     let output = task::block_on(async {
-        (inputs.0).send(1).await;
+        (inputs.0).send(1).await.unwrap();
         computer.run().await.unwrap();
         let mut ret = -1;
-        while let Some(output) = (outputs.1).recv().await {
+        while let Ok(output) = (outputs.1).recv().await {
             ret = output
         }
         ret
@@ -26,10 +26,10 @@ fn main() {
 
     computer.init(&input).unwrap();
     let output = task::block_on(async {
-        (inputs.0).send(5).await;
+        (inputs.0).send(5).await.unwrap();
         computer.run().await.unwrap();
         let mut ret = -1;
-        while let Some(output) = (outputs.1).recv().await {
+        while let Ok(output) = (outputs.1).recv().await {
             ret = output
         }
         ret

@@ -1,4 +1,4 @@
-use async_std::sync::{channel, Receiver, Sender};
+use async_std::channel::{bounded, Receiver, RecvError, Sender};
 
 use std::{
     fmt,
@@ -91,7 +91,7 @@ impl<'a> IntcodeComputer<'a> {
     }
 
     pub fn create_io() -> (IOChannels, IOChannels) {
-        (channel(BUFFER_SIZE), channel(BUFFER_SIZE))
+        (bounded(BUFFER_SIZE), bounded(BUFFER_SIZE))
     }
 
     pub fn state(&self) -> &OperationState {
@@ -106,7 +106,7 @@ impl<'a> IntcodeComputer<'a> {
         Ok(())
     }
 
-    async fn get_input(&self) -> Option<Int> {
+    async fn get_input(&self) -> Result<Int, RecvError> {
         self.input.recv().await
     }
 
@@ -132,12 +132,18 @@ impl<'a> IntcodeComputer<'a> {
                     self.write(dest, lhs * rhs);
                 }
                 Input(dest) => {
-                    let input = self.get_input().await.ok_or(Error::InvalidInputError)?;
+                    let input = self
+                        .get_input()
+                        .await
+                        .map_err(|_| Error::InvalidInputError)?;
                     let dest = self.get_addr(&dest);
                     self.write(dest, input);
                 }
                 Output(src) => {
-                    self.output.send(self.get(&src)).await;
+                    self.output
+                        .send(self.get(&src))
+                        .await
+                        .map_err(|_| Error::InvalidOutputError)?;
                 }
                 JumpIfTrue(x, dest) => {
                     if self.get(&x) != 0 {
@@ -312,7 +318,7 @@ impl ParameterMode {
     }
 
     fn parse_mode(x: Int, pos: u32) -> Int {
-        ((x / 100 / ((10 as Int).pow(pos))) % 10)
+        (x / 100 / ((10 as Int).pow(pos))) % 10
     }
 
     fn new(x: Int, pos: u32) -> Result<ParameterMode, Error> {
@@ -382,7 +388,7 @@ async fn get_output(program: &str) -> Result<Vec<Int>, Error> {
 
 pub async fn get_all_outputs(receiver: &Receiver<Int>) -> Vec<Int> {
     let mut outs = Vec::new();
-    while let Some(output) = receiver.recv().await {
+    while let Ok(output) = receiver.recv().await {
         outs.push(output);
     }
     outs
@@ -431,4 +437,5 @@ pub enum Error {
     ProgramParseError(String),
     OpcodeParseError(Int),
     InvalidInputError,
+    InvalidOutputError,
 }

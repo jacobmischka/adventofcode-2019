@@ -54,7 +54,7 @@ async fn run_program(program: &str) -> TileGrid {
         let mut grid = TileGrid::new();
         let mut x: Int = 0;
         let mut y: Int = 0;
-        while let Some(output) = output_receiver.recv().await {
+        while let Ok(output) = output_receiver.recv().await {
             let c: char = (output as u8).into();
             match c {
                 '\n' => {

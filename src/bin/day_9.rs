@@ -15,7 +15,7 @@ fn main() {
     computer.init(&input).unwrap();
 
     let boost_keycode = task::block_on(async {
-        (inputs.0).send(1).await;
+        (inputs.0).send(1).await.unwrap();
         computer.run().await.unwrap();
         outputs.1.recv().await.unwrap()
     });
@@ -24,7 +24,7 @@ fn main() {
 
     computer.init(&input).unwrap();
     let coords = task::block_on(async {
-        (inputs.0).send(2).await;
+        (inputs.0).send(2).await.unwrap();
         computer.run().await.unwrap();
         outputs.1.recv().await.unwrap()
     });

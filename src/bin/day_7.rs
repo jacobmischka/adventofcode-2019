@@ -1,4 +1,4 @@
-use async_std::sync::channel;
+use async_std::channel::bounded;
 use async_std::task;
 
 use futures::future::join_all;
@@ -34,11 +34,11 @@ fn get_max_output(program: &str, phase_options: &Vec<Int>, initial_input: Int) -
 }
 
 async fn run_amps(phase_settings: &[Int], program: &str, initial_input: Int) -> Int {
-    let a_io = channel(BUFFER_SIZE);
-    let b_io = channel(BUFFER_SIZE);
-    let c_io = channel(BUFFER_SIZE);
-    let d_io = channel(BUFFER_SIZE);
-    let e_io = channel(BUFFER_SIZE);
+    let a_io = bounded(BUFFER_SIZE);
+    let b_io = bounded(BUFFER_SIZE);
+    let c_io = bounded(BUFFER_SIZE);
+    let d_io = bounded(BUFFER_SIZE);
+    let e_io = bounded(BUFFER_SIZE);
 
     let mut a = IntcodeComputer::new(&a_io.1, &b_io.0);
     let mut b = IntcodeComputer::new(&b_io.1, &c_io.0);
@@ -46,13 +46,13 @@ async fn run_amps(phase_settings: &[Int], program: &str, initial_input: Int) -> 
     let mut d = IntcodeComputer::new(&d_io.1, &e_io.0);
     let mut e = IntcodeComputer::new(&e_io.1, &a_io.0);
 
-    (a_io.0).send(phase_settings[0]).await;
-    (b_io.0).send(phase_settings[1]).await;
-    (c_io.0).send(phase_settings[2]).await;
-    (d_io.0).send(phase_settings[3]).await;
-    (e_io.0).send(phase_settings[4]).await;
+    (a_io.0).send(phase_settings[0]).await.unwrap();
+    (b_io.0).send(phase_settings[1]).await.unwrap();
+    (c_io.0).send(phase_settings[2]).await.unwrap();
+    (d_io.0).send(phase_settings[3]).await.unwrap();
+    (e_io.0).send(phase_settings[4]).await.unwrap();
 
-    (a_io.0).send(initial_input).await;
+    (a_io.0).send(initial_input).await.unwrap();
 
     let mut amps = vec![&mut a, &mut b, &mut c, &mut d, &mut e];
     for amp in amps.iter_mut() {

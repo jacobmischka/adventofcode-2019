@@ -101,7 +101,7 @@ fn play(program: &str, mut loaded_inputs: VecDeque<Int>) -> (GameGrid, Vec<Int>)
                 }
             } {
                 inputs.push(input);
-                in_sender.send(input).await;
+                in_sender.send(input).await.unwrap();
             };
         }
 
@@ -113,7 +113,7 @@ fn play(program: &str, mut loaded_inputs: VecDeque<Int>) -> (GameGrid, Vec<Int>)
         let mut grid = GameGrid::new();
         let mut score = 0;
 
-        while let Some(x) = out_receiver.recv().await {
+        while let Ok(x) = out_receiver.recv().await {
             let y = out_receiver.recv().await.expect("failed getting y");
             let value = out_receiver
                 .recv()

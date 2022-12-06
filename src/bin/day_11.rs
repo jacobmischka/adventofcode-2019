@@ -32,8 +32,8 @@ async fn run_painting(program: &str, initial_input: Int) -> PanelGrid {
         let mut robot = HullPaintingRobot::default();
         let mut grid = PanelGrid::new();
 
-        input_sender.send(initial_input).await;
-        while let Some(new_color) = output_receiver.recv().await {
+        input_sender.send(initial_input).await.unwrap();
+        while let Ok(new_color) = output_receiver.recv().await {
             let turn_input = output_receiver.recv().await.unwrap();
 
             grid.insert(robot.pos.clone(), PanelColor::try_from(new_color).unwrap());
@@ -45,7 +45,7 @@ async fn run_painting(program: &str, initial_input: Int) -> PanelGrid {
                 _ => PanelColor::default(),
             };
 
-            input_sender.send((panel_color).into()).await;
+            input_sender.send((panel_color).into()).await.unwrap();
         }
 
         grid
