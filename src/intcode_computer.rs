@@ -70,7 +70,10 @@ impl FromStr for IntVec {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Ok(IntVec(
             s.split(',')
-                .map(|s| s.parse::<Int>().map_err(|_| Error::InvalidInputError))
+                .map(|s| {
+                    s.parse::<Int>()
+                        .map_err(|_| Error::InvalidInputError(s.to_string()))
+                })
                 .collect::<Result<Vec<Int>, Error>>()?,
         ))
     }
@@ -110,6 +113,18 @@ impl<'a> IntcodeComputer<'a> {
         self.input.recv().await
     }
 
+    pub async fn repeat(&mut self) -> Result<i64, Error> {
+        let start_mem = self.mem.clone();
+
+        loop {
+            self.run().await?;
+            self.state = OperationState::Ready;
+            self.pos = 0;
+            self.relative_base = 0;
+            self.mem = start_mem.clone();
+        }
+    }
+
     pub async fn run(&mut self) -> Result<(), Error> {
         use Instruction::*;
 
@@ -135,7 +150,7 @@ impl<'a> IntcodeComputer<'a> {
                     let input = self
                         .get_input()
                         .await
-                        .map_err(|_| Error::InvalidInputError)?;
+                        .map_err(|err| Error::InvalidInputError(err.to_string()))?;
                     let dest = self.get_addr(&dest);
                     self.write(dest, input);
                 }
@@ -143,7 +158,7 @@ impl<'a> IntcodeComputer<'a> {
                     self.output
                         .send(self.get(&src))
                         .await
-                        .map_err(|_| Error::InvalidOutputError)?;
+                        .map_err(|err| Error::InvalidOutputError(err.to_string()))?;
                 }
                 JumpIfTrue(x, dest) => {
                     if self.get(&x) != 0 {
@@ -436,6 +451,6 @@ fn relative_base_works() {
 pub enum Error {
     ProgramParseError(String),
     OpcodeParseError(Int),
-    InvalidInputError,
-    InvalidOutputError,
+    InvalidInputError(String),
+    InvalidOutputError(String),
 }

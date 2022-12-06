@@ -1,4 +1,4 @@
-use async_std::task;
+use async_std::{prelude::*, task};
 
 use adventofcode_2019::intcode_computer::*;
 
@@ -13,27 +13,16 @@ fn main() {
     let mut computer = IntcodeComputer::new(&inputs.1, &outputs.0);
 
     computer.init(&input).unwrap();
-    let output = task::block_on(async {
+    let (_, output) = task::block_on(computer.run().join(async {
         (inputs.0).send(1).await.unwrap();
-        computer.run().await.unwrap();
-        let mut ret = -1;
-        while let Ok(output) = (outputs.1).recv().await {
-            ret = output
-        }
-        ret
-    });
+        outputs.1.recv().await.unwrap()
+    }));
     println!("Part 1: {}", output);
 
     computer.init(&input).unwrap();
-    let output = task::block_on(async {
+    let (_, output) = task::block_on(computer.run().join(async {
         (inputs.0).send(5).await.unwrap();
-        computer.run().await.unwrap();
-        let mut ret = -1;
-        while let Ok(output) = (outputs.1).recv().await {
-            ret = output
-        }
-        ret
-    });
-
+        (outputs.1).recv().await.unwrap()
+    }));
     println!("Part 2: {}", output);
 }
